@@ -52,3 +52,7 @@ Mkfile.old
 dkms.conf
 
 .metadata/
+
+UARTTest/node_modules/
+
+VFC-MakeTestF4/

@@ -50,11 +50,15 @@ extern "C" {
 
 /* USER CODE END EM */
 
+void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
+
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
-
+void Reset_UART1();
+void Reset_UART2();
+void OnMessage();
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
