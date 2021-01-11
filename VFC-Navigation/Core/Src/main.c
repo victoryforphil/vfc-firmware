@@ -23,7 +23,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <SEGGER_SYSVIEW.h>
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -43,78 +43,59 @@
 /* Private variables ---------------------------------------------------------*/
 CAN_HandleTypeDef hcan1;
 
-TIM_HandleTypeDef htim4;
+I2C_HandleTypeDef hi2c1;
+I2C_HandleTypeDef hi2c2;
+DMA_HandleTypeDef hdma_i2c1_rx;
 
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
-UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_usart2_rx;
 
-/* Definitions for taskSendMockDat */
-osThreadId_t taskSendMockDatHandle;
-const osThreadAttr_t taskSendMockDat_attributes = {
-  .name = "taskSendMockDat",
-  .priority = (osPriority_t) osPriorityNormal,
+/* Definitions for taskSendState */
+osThreadId_t taskSendStateHandle;
+const osThreadAttr_t taskSendState_attributes = {
+  .name = "taskSendState",
+  .priority = (osPriority_t) osPriorityRealtime,
   .stack_size = 128 * 4
 };
-/* Definitions for taskUpdateTim1 */
-osThreadId_t taskUpdateTim1Handle;
-const osThreadAttr_t taskUpdateTim1_attributes = {
-  .name = "taskUpdateTim1",
-  .priority = (osPriority_t) osPriorityHigh3,
+/* Definitions for taskProcessStat */
+osThreadId_t taskProcessStatHandle;
+const osThreadAttr_t taskProcessStat_attributes = {
+  .name = "taskProcessStat",
+  .priority = (osPriority_t) osPriorityHigh,
   .stack_size = 128 * 4
 };
-/* Definitions for semUARTReady */
-osSemaphoreId_t semUARTReadyHandle;
-const osSemaphoreAttr_t semUARTReady_attributes = {
-  .name = "semUARTReady"
+/* Definitions for taskSendStatus */
+osThreadId_t taskSendStatusHandle;
+const osThreadAttr_t taskSendStatus_attributes = {
+  .name = "taskSendStatus",
+  .priority = (osPriority_t) osPriorityLow,
+  .stack_size = 128 * 4
 };
 /* USER CODE BEGIN PV */
-uint8_t rxBuffer[4] = {0};
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
-static void MX_CAN1_Init(void);
-static void MX_USART1_UART_Init(void);
+static void MX_I2C1_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_USART3_UART_Init(void);
-static void MX_TIM4_Init(void);
-void StartMockDataTask(void *argument);
-void StartUpdateTim1(void *argument);
+static void MX_CAN1_Init(void);
+static void MX_I2C2_Init(void);
+static void MX_USART1_UART_Init(void);
+void Start_SendState(void *argument);
+void Start_ProcessState(void *argument);
+void Start_SendStatus(void *argument);
 
 /* USER CODE BEGIN PFP */
-void setPWM(TIM_HandleTypeDef timer, uint32_t channel, uint16_t period, uint16_t pulse)
-{
- HAL_TIM_PWM_Stop(&timer, channel); // stop generation of pwm
- TIM_OC_InitTypeDef sConfigOC;
- timer.Init.Period = period; // set the period duration
- HAL_TIM_PWM_Init(&timer); // reinititialise with new period value
- sConfigOC.OCMode = TIM_OCMODE_PWM1;
- sConfigOC.Pulse = pulse; // set the pulse duration
- sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
- sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
- HAL_TIM_PWM_ConfigChannel(&timer, &sConfigOC, channel);
- HAL_TIM_PWM_Start(&timer, channel);
-}
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void Reset_UART1(){
-	uint8_t testBuf[16] = {0};
-	HAL_UART_Receive_DMA(&huart1, rxBuffer, sizeof(rxBuffer));
-}
-void Reset_UART2(){
-	uint8_t testBuf[16] = {0};
-	HAL_UART_Receive_DMA(&huart2, rxBuffer, sizeof(rxBuffer));
-}
-void OnMessage(){
 
-	osSemaphoreRelease(semUARTReadyHandle);
-}
 /* USER CODE END 0 */
 
 /**
@@ -140,28 +121,18 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-  SEGGER_SYSVIEW_Conf();
 
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
-  MX_CAN1_Init();
-  MX_USART1_UART_Init();
+  MX_I2C1_Init();
   MX_USART2_UART_Init();
-  MX_USART3_UART_Init();
-  MX_TIM4_Init();
+  MX_CAN1_Init();
+  MX_I2C2_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-
-  //HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
- // Reset_UART1();
-  Reset_UART2();
-  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
-  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
-  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
-  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6,GPIO_PIN_RESET);
 
   /* USER CODE END 2 */
 
@@ -171,10 +142,6 @@ int main(void)
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
-
-  /* Create the semaphores(s) */
-  /* creation of semUARTReady */
-  semUARTReadyHandle = osSemaphoreNew(1, 1, &semUARTReady_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -189,15 +156,17 @@ int main(void)
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* creation of taskSendMockDat */
-  taskSendMockDatHandle = osThreadNew(StartMockDataTask, NULL, &taskSendMockDat_attributes);
+  /* creation of taskSendState */
+  taskSendStateHandle = osThreadNew(Start_SendState, NULL, &taskSendState_attributes);
 
-  /* creation of taskUpdateTim1 */
-  taskUpdateTim1Handle = osThreadNew(StartUpdateTim1, NULL, &taskUpdateTim1_attributes);
+  /* creation of taskProcessStat */
+  taskProcessStatHandle = osThreadNew(Start_ProcessState, NULL, &taskProcessStat_attributes);
+
+  /* creation of taskSendStatus */
+  taskSendStatusHandle = osThreadNew(Start_SendStatus, NULL, &taskSendStatus_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
-
   /* USER CODE END RTOS_THREADS */
 
   /* Start scheduler */
@@ -292,64 +261,70 @@ static void MX_CAN1_Init(void)
 }
 
 /**
-  * @brief TIM4 Initialization Function
+  * @brief I2C1 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_TIM4_Init(void)
+static void MX_I2C1_Init(void)
 {
 
-  /* USER CODE BEGIN TIM4_Init 0 */
+  /* USER CODE BEGIN I2C1_Init 0 */
 
-  /* USER CODE END TIM4_Init 0 */
+  /* USER CODE END I2C1_Init 0 */
 
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_OC_InitTypeDef sConfigOC = {0};
+  /* USER CODE BEGIN I2C1_Init 1 */
 
-  /* USER CODE BEGIN TIM4_Init 1 */
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 100000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
 
-  /* USER CODE END TIM4_Init 1 */
-  htim4.Instance = TIM4;
-  htim4.Init.Prescaler = 32;
-  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim4.Init.Period = 1000;
-  htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_PWM_Init(&htim4) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 5;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigOC.Pulse = 0;
-  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM4_Init 2 */
+  /* USER CODE END I2C1_Init 2 */
 
-  /* USER CODE END TIM4_Init 2 */
-  HAL_TIM_MspPostInit(&htim4);
+}
+
+/**
+  * @brief I2C2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C2_Init(void)
+{
+
+  /* USER CODE BEGIN I2C2_Init 0 */
+
+  /* USER CODE END I2C2_Init 0 */
+
+  /* USER CODE BEGIN I2C2_Init 1 */
+
+  /* USER CODE END I2C2_Init 1 */
+  hi2c2.Instance = I2C2;
+  hi2c2.Init.ClockSpeed = 100000;
+  hi2c2.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c2.Init.OwnAddress1 = 0;
+  hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c2.Init.OwnAddress2 = 0;
+  hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C2_Init 2 */
+
+  /* USER CODE END I2C2_Init 2 */
 
 }
 
@@ -420,39 +395,6 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
-  * @brief USART3 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART3_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART3_Init 0 */
-
-  /* USER CODE END USART3_Init 0 */
-
-  /* USER CODE BEGIN USART3_Init 1 */
-
-  /* USER CODE END USART3_Init 1 */
-  huart3.Instance = USART3;
-  huart3.Init.BaudRate = 115200;
-  huart3.Init.WordLength = UART_WORDLENGTH_8B;
-  huart3.Init.StopBits = UART_STOPBITS_1;
-  huart3.Init.Parity = UART_PARITY_NONE;
-  huart3.Init.Mode = UART_MODE_TX_RX;
-  huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART3_Init 2 */
-
-  /* USER CODE END USART3_Init 2 */
-
-}
-
-/**
   * Enable DMA controller clock
   */
 static void MX_DMA_Init(void)
@@ -462,8 +404,11 @@ static void MX_DMA_Init(void)
   __HAL_RCC_DMA1_CLK_ENABLE();
 
   /* DMA interrupt init */
+  /* DMA1_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 7, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
   /* DMA1_Stream5_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 6, 0);
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 8, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
 
 }
@@ -475,46 +420,10 @@ static void MX_DMA_Init(void)
   */
 static void MX_GPIO_Init(void)
 {
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
-  __HAL_RCC_GPIOD_CLK_ENABLE();
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6|GPIO_PIN_7, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_8|GPIO_PIN_9|GPIO_PIN_10|GPIO_PIN_11
-                          |GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_RESET);
-
-  /*Configure GPIO pins : PA6 PA7 */
-  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PD8 PD9 PD10 PD11
-                           PD12 PD13 PD14 PD15 */
-  GPIO_InitStruct.Pin = GPIO_PIN_8|GPIO_PIN_9|GPIO_PIN_10|GPIO_PIN_11
-                          |GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PC6 */
-  GPIO_InitStruct.Pin = GPIO_PIN_6;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
 }
 
@@ -522,88 +431,58 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_StartMockDataTask */
+/* USER CODE BEGIN Header_Start_SendState */
 /**
-  * @brief  Function implementing the taskSendMockDat thread.
+  * @brief  Function implementing the taskSendState thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_StartMockDataTask */
-void StartMockDataTask(void *argument)
+/* USER CODE END Header_Start_SendState */
+void Start_SendState(void *argument)
 {
   /* USER CODE BEGIN 5 */
-
   /* Infinite loop */
   for(;;)
   {
-
-    osDelay(500);
-
-
-
+    osDelay(1);
   }
   /* USER CODE END 5 */
 }
 
-/* USER CODE BEGIN Header_StartUpdateTim1 */
+/* USER CODE BEGIN Header_Start_ProcessState */
 /**
-* @brief Function implementing the taskUpdateTim1 thread.
+* @brief Function implementing the taskProcessStat thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_StartUpdateTim1 */
-void StartUpdateTim1(void *argument)
+/* USER CODE END Header_Start_ProcessState */
+void Start_ProcessState(void *argument)
 {
-  /* USER CODE BEGIN StartUpdateTim1 */
-
+  /* USER CODE BEGIN Start_ProcessState */
   /* Infinite loop */
-
   for(;;)
   {
-
-
-	  if(osSemaphoreAcquire(semUARTReadyHandle, 2000) == osOK){
-		  uint16_t pwm1 = rxBuffer[0] * 4;
-		  uint16_t pwm2 = rxBuffer[1] * 4;
-		  uint16_t pwm3 = rxBuffer[2] * 4;
-		  uint16_t pwm4 = rxBuffer[3] * 4;
-		  SEGGER_SYSVIEW_Print("Updating Timer 1: ");
-		 // HAL_UART_Transmit(&huart2, &pwm1, 1, 10);
-		  __HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_1, pwm1 + 1);
-		  __HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_2, pwm2 + 1);
-		  __HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_3, pwm3 + 1);
-		  __HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_4, pwm4 + 1);
-	  }else{
-		  osDelay(500);
-	  }
-
-	 // __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1, pwm1);
-	 // __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_2, pwm2);
-
-
+    osDelay(1);
   }
-  /* USER CODE END StartUpdateTim1 */
+  /* USER CODE END Start_ProcessState */
 }
 
+/* USER CODE BEGIN Header_Start_SendStatus */
 /**
-  * @brief  Period elapsed callback in non blocking mode
-  * @note   This function is called  when TIM2 interrupt took place, inside
-  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
-  * a global variable "uwTick" used as application time base.
-  * @param  htim : TIM handle
-  * @retval None
-  */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+* @brief Function implementing the taskSendStatus thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_Start_SendStatus */
+void Start_SendStatus(void *argument)
 {
-  /* USER CODE BEGIN Callback 0 */
-
-  /* USER CODE END Callback 0 */
-  if (htim->Instance == TIM2) {
-    HAL_IncTick();
+  /* USER CODE BEGIN Start_SendStatus */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
   }
-  /* USER CODE BEGIN Callback 1 */
-
-  /* USER CODE END Callback 1 */
+  /* USER CODE END Start_SendStatus */
 }
 
 /**
@@ -614,7 +493,7 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
-	SEGGER_SYSVIEW_Print("Error_handler");
+
   /* USER CODE END Error_Handler_Debug */
 }
 
