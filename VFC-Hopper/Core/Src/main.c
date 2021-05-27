@@ -25,6 +25,8 @@
 /* USER CODE BEGIN Includes */
 #include <SEGGER_SYSVIEW.h>
 #include "motor_driver.h"
+
+#include "px4flow.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -34,6 +36,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define UART2_BUFFER_SIZE 64
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -43,6 +46,10 @@
 
 /* Private variables ---------------------------------------------------------*/
 TIM_HandleTypeDef htim1;
+
+UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart2;
+DMA_HandleTypeDef hdma_usart2_rx;
 
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
@@ -63,14 +70,27 @@ osSemaphoreId_t semPWMPendingHandle;
 const osSemaphoreAttr_t semPWMPending_attributes = {
   .name = "semPWMPending"
 };
+/* Definitions for semUART2Data */
+osSemaphoreId_t semUART2DataHandle;
+const osSemaphoreAttr_t semUART2Data_attributes = {
+  .name = "semUART2Data"
+};
 /* USER CODE BEGIN PV */
+uint8_t uart2Buffer[UART2_BUFFER_SIZE] = {0};
 
+
+
+uint8_t mavlinkBuffer[300] = {0};
+size_t 	mavlinkBufferIdx = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_TIM1_Init(void);
+static void MX_USART2_UART_Init(void);
+static void MX_USART1_UART_Init(void);
 void StartDefaultTask(void *argument);
 extern void MTR_TaskUpdate(void *argument);
 
@@ -112,13 +132,17 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_TIM1_Init();
+  MX_USART2_UART_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);
-
+ // UART2_Read();
+  HAL_UART_Receive_DMA(&huart2, &uart2Buffer, UART2_BUFFER_SIZE);
   MTR_Init(&htim1, &semPWMPendingHandle);
 
   /* USER CODE END 2 */
@@ -133,6 +157,9 @@ int main(void)
   /* Create the semaphores(s) */
   /* creation of semPWMPending */
   semPWMPendingHandle = osSemaphoreNew(1, 1, &semPWMPending_attributes);
+
+  /* creation of semUART2Data */
+  semUART2DataHandle = osSemaphoreNew(1, 1, &semUART2Data_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -298,6 +325,88 @@ static void MX_TIM1_Init(void)
 }
 
 /**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 115200;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
+
+}
+
+/**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -306,11 +415,36 @@ static void MX_GPIO_Init(void)
 {
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOE_CLK_ENABLE();
 
 }
 
 /* USER CODE BEGIN 4 */
+void UART2_Read(){
+
+	int toRead = pxParse(uart2Buffer, UART2_BUFFER_SIZE);
+	memset(uart2Buffer, 0, UART2_BUFFER_SIZE);
+	HAL_UART_Receive_DMA(&huart2, &uart2Buffer, UART2_BUFFER_SIZE);
+
+
+}
+
+
+void PXNewData(){
+	//osSemaphoreRelease(semUART2DataHandle);
+	//OpticalFlowMessage* msg = pxGetLatest();
+
+	//char str[] = "Distance: %d\n";
+	//char str2[1000];
+	//sprintf(str2,str,msg->ground_distance);
+	//HAL_UART_Transmit(&huart1, str2, strlen(str2), 100);
+}
+
+void ShiftBuffer(size_t offset){
+	uint8_t* dest = uart2Buffer[0];
+	memmove(dest, dest + offset, sizeof(uart2Buffer) - offset);
+}
 
 /* USER CODE END 4 */
 
@@ -336,15 +470,14 @@ void StartDefaultTask(void *argument)
 	MTR_UpdateState(min);
 	osDelay(1000);
 	 */
-
-	size_t testVal = 1005;
+	OpticalFlowMessage msg = {0};
   for(;;)
   {
-	  size_t initValues[4] = {testVal,1005,1005,1005};
-	  MTR_UpdateState(initValues);
-	  testVal += 10;
-	  if(testVal >= 1980){
-		  testVal = 1005;
+
+
+	  if(osSemaphoreAcquire(semUART2DataHandle, 50) == osOK){
+
+
 	  }
 	  osDelay(10);
 

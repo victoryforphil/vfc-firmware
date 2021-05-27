@@ -56,3 +56,5 @@ dkms.conf
 UARTTest/node_modules/
 
 VFC-MakeTestF4/
+
+VFC-Hopper/Debug/
